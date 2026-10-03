@@ -21,9 +21,19 @@ prisma/migrations/
 kuromoji-dict
 .cache
 .local/
+local/
 .tmp_test/
 *.tsbuildinfo
 tsconfig.tsbuildinfo
+public/tts/
+ins.txt
+ins2.txt
+thesis-review.md
+
+# AI agent configs (local only, never commit)
+.omp/
+AGENTS.md
+WORKLOG.md
 
 # OS / IDE
 .DS_Store
