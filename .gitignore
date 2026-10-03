@@ -1,0 +1,32 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+.nextexport/
+.nextexport/
+
+# env (never commit secrets)
+.env
+.env*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# prisma
+prisma/migrations/
+
+# misc
+kuromoji-dict
+.cache
+.local/
+.tmp_test/
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# OS / IDE
+.DS_Store
+*.log
+.vscode/
+.idea/

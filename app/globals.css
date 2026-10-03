@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+body { @apply bg-[#fff7f9] text-slate-800 antialiased; background-image: radial-gradient(ellipse at top, #ffe4ec 0%, transparent 60%), radial-gradient(ellipse at bottom, #ffc8d6 0%, transparent 50%); }
+.scrollbar-thin::-webkit-scrollbar { width: 6px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { @apply bg-sakura-200 rounded; }
+.scrollbar-thin::-webkit-scrollbar-track { @apply bg-sakura-50; }

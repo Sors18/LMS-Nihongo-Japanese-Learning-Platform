@@ -1,0 +1,243 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+enum Role {
+  USER
+  ADMIN
+}
+
+enum Level {
+  N5
+  N4
+  N3
+  N2
+  N1
+}
+
+enum VideoCategory {
+  SHORT
+  KAIWA
+  SONG
+  ANIME
+}
+
+enum FlashcardStatus {
+  NEW
+  LEARNING
+  MASTERED
+}
+
+enum QuestionType {
+  VOCAB_CHOICE
+  FILL_PARTICLE
+  LISTENING
+}
+
+// ==========================================
+// PHÂN HỆ 1: NGƯỜI DÙNG
+model User {
+  id            String       @id @default(uuid())
+  email         String       @unique
+  password_hash String
+  name          String
+  role          Role         @default(USER)
+  target_level  Level        @default(N4)
+  created_at    DateTime     @default(now())
+
+  flashcards    Flashcard[]
+  test_results  TestResult[]
+  activities    DailyActivity[]
+  kanjiProgress KanjiProgress[]
+  chatMessages  ChatMessage[]
+}
+// ==========================================
+// PHÂN HỆ 2: NỘI DUNG CỐT LÕI
+// ==========================================
+model Video {
+  id             Int                    @id @default(autoincrement())
+  youtube_id     String                 @unique
+  title          String
+  level          Level
+  category       VideoCategory @default(SHORT)
+  duration       Int
+  // Tên bộ anime — các tập cùng bộ có cùng series, trang /anime/[series] liệt kê tập
+  series         String?       @db.VarChar(255)
+
+  subtitles      Subtitle[]
+  grammar_points VideoGrammarTimeline[]
+  questions      Question[]
+  test_results   TestResult[]
+}
+
+model Subtitle {
+  id            Int    @id @default(autoincrement())
+  video_id      Int
+  start_time_ms Int
+  end_time_ms   Int
+  raw_text      String @db.Text
+  // Bản dịch Việt song ngữ (dòng VI dưới câu JP) — ngữ cảnh tra nghĩa + hiển thị
+  translation   String? @db.Text
+
+  video Video @relation(fields: [video_id], references: [id], onDelete: Cascade)
+
+  @@index([video_id])
+  @@index([start_time_ms])
+}
+
+// ==========================================
+// PHÂN HỆ 3: NỀN TẢNG TRI THỨC
+// ==========================================
+model Vocabulary {
+  id         Int         @id @default(autoincrement())
+  word       String
+  reading    String
+  meaning    String
+  level      Level
+
+  flashcards Flashcard[]
+
+  @@index([word])
+}
+
+// Báo lỗi từ vựng của user — admin duyệt/sửa ở /admin/reports
+enum ReportStatus {
+  PENDING
+  RESOLVED
+  REJECTED
+}
+
+model VocabReport {
+  id              Int          @id @default(autoincrement())
+  word            String
+  reading         String       @default("")
+  current_meaning String       @default("")
+  vocab_id        Int?
+  user_id         String?
+  // READING | MEANING | KIND | OTHER
+  issue           String       @default("OTHER")
+  note            String       @default("") @db.Text
+  status          ReportStatus @default(PENDING)
+  created_at      DateTime     @default(now())
+
+  @@index([status])
+  @@index([word])
+}
+
+model Grammar {
+  id          Int                    @id @default(autoincrement())
+  structure   String
+  explanation String                 @db.Text
+  level       Level
+
+  videos VideoGrammarTimeline[]
+}
+
+model VideoGrammarTimeline {
+  id           Int @id @default(autoincrement())
+  video_id     Int
+  grammar_id   Int
+  appear_at_ms Int
+
+  video   Video   @relation(fields: [video_id], references: [id], onDelete: Cascade)
+  grammar Grammar @relation(fields: [grammar_id], references: [id], onDelete: Cascade)
+
+  @@index([video_id])
+}
+
+// ==========================================
+// PHÂN HỆ 4: HỌC TẬP & GAMIFICATION
+// ==========================================
+model Flashcard {
+  id               Int             @id @default(autoincrement())
+  user_id          String
+  vocab_id         Int
+  video_context_id Int?
+  status           FlashcardStatus @default(NEW)
+  created_at       DateTime        @default(now())
+  updated_at       DateTime        @updatedAt
+  // SRS SM-2 (Anki-style) — due review scheduling
+  due_at       DateTime @default(now())
+  interval     Int      @default(0) // ngày
+  ease         Float    @default(2.5)
+  repetitions  Int      @default(0)
+  last_reviewed_at DateTime?
+
+  user       User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  vocabulary Vocabulary @relation(fields: [vocab_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+}
+
+model Question {
+  id             Int          @id @default(autoincrement())
+  video_id       Int
+  question_type  QuestionType
+  content        String       @db.Text
+  options        Json
+  correct_answer String
+
+  video Video @relation(fields: [video_id], references: [id], onDelete: Cascade)
+
+  @@index([video_id])
+}
+
+model TestResult {
+  id              Int      @id @default(autoincrement())
+  user_id         String
+  video_id        Int
+  score           Int
+  total_questions Int
+  completed_at    DateTime @default(now())
+  user  User  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  video Video @relation(fields: [video_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([video_id])
+}
+
+model DailyActivity {
+  id       Int      @id @default(autoincrement())
+  user_id  String
+  date     DateTime @db.Date
+  xp       Int      @default(0)
+  count    Int      @default(0)
+  user     User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, date])
+  @@index([user_id])
+}
+
+model KanjiProgress {
+  id         Int      @id @default(autoincrement())
+  user_id    String
+  kanji      String   @db.VarChar(10)
+  attempts   Int      @default(0)
+  mastered   Boolean  @default(false)
+  updated_at DateTime @updatedAt
+  created_at DateTime @default(now())
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, kanji])
+  @@index([user_id])
+}
+
+model ChatMessage {
+  id         Int      @id @default(autoincrement())
+  user_id    String
+  role       String   // "user" | "assistant"
+  content    String   @db.Text
+  created_at DateTime @default(now())
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([created_at])
+}
