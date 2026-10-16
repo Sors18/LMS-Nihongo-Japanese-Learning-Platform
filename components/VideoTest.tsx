@@ -1,7 +1,14 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import dynamic from "next/dynamic";
+import type { ComponentType } from "react";
 import { submitTest } from "@/app/actions/test";
+
+// react-player chỉ chạy client — lazy để không đè nặng modal khi chưa cần
+const ReactPlayer = dynamic(() => import("react-player"), { ssr: false }) as unknown as ComponentType<
+  Record<string, unknown>
+>;
 
 type Question = {
   id: number;
@@ -11,13 +18,35 @@ type Question = {
   correct_answer: string;
 };
 
+export type ListeningSubtitleRef = {
+  id: number;
+  raw_text: string;
+  start_time_ms: number;
+  end_time_ms: number;
+};
+
 type Props = {
   questions: Question[];
   videoId: number;
   open?: boolean;
   onClose?: () => void;
   triggerLabel?: string;
+  /** youtube id của video — có thì câu LISTENING phát giọng gốc, thiếu thì fallback TTS */
+  youtubeId?: string;
+  /** phụ đề để suy timestamp đoạn gốc (không cần migrate DB) */
+  subtitles?: ListeningSubtitleRef[];
 };
+
+/** Tìm phụ đề khớp đáp án đúng → lấy timestamp đoạn gốc để phát. */
+function findSubtitleFor(correctAnswer: string, subtitles?: ListeningSubtitleRef[]): ListeningSubtitleRef | null {
+  if (!subtitles?.length) return null;
+  const raw = (correctAnswer ?? "").trim();
+  if (!raw) return null;
+  const exact = subtitles.find((s) => (s.raw_text ?? "").trim() === raw);
+  if (exact) return exact;
+  const contains = subtitles.find((s) => (s.raw_text ?? "").includes(raw) || raw.includes((s.raw_text ?? "").trim()));
+  return contains ?? null;
+}
 
 function parseOptions(raw: unknown): string[] {
   if (raw == null) return [];
@@ -72,6 +101,133 @@ async function fetchServerTtsUrl(text: string): Promise<string | null> {
   }
 }
 
+type SegmentHandle = {
+  getCurrentTime: () => number;
+  seekTo: (amount: number, type?: "seconds" | "fraction") => void;
+};
+
+/**
+ * Phát ĐOẠN GỐC trong video YouTube (seek tới start_ms, tự dừng ở end_ms).
+ * Không cắt/tải mp3 trên server (nặng + vi phạm TOS YouTube) — tái dùng iframe
+ * YouTube sẵn có, cùng pattern với ShadowingPlayer. Lazy-mount player ở lần bấm
+ * đầu để 10 câu không tạo 10 iframe cùng lúc.
+ */
+function SegmentPlayButton({ youtubeId, startMs, endMs }: { youtubeId: string; startMs: number; endMs: number }) {
+  const playerRef = useRef<SegmentHandle | null>(null);
+  const timerRef = useRef<number | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [plays, setPlays] = useState(0);
+
+  const startSec = Math.max(0, startMs / 1000);
+  const durSec = Math.max(0.5, (endMs - startMs) / 1000);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) window.clearInterval(timerRef.current);
+    };
+  }, []);
+
+  const stopAtEnd = () => {
+    if (timerRef.current !== null) {
+      window.clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    setPlaying(false);
+    try {
+      playerRef.current?.seekTo(startSec, "seconds");
+    } catch {
+      // ignore
+    }
+  };
+
+  const startTimer = () => {
+    if (timerRef.current !== null) window.clearInterval(timerRef.current);
+    timerRef.current = window.setInterval(() => {
+      const raw = playerRef.current?.getCurrentTime?.();
+      if (typeof raw === "number" && !Number.isNaN(raw)) {
+        if (raw >= startSec + durSec - 0.2) stopAtEnd();
+      }
+    }, 150);
+  };
+
+  const handlePlay = () => {
+    if (!mounted) {
+      setMounted(true); // player mount rồi onReady sẽ tự phát
+      return;
+    }
+    try {
+      playerRef.current?.seekTo(startSec, "seconds");
+    } catch {
+      // ignore
+    }
+    setPlaying(true);
+    setPlays((p) => p + 1);
+    startTimer();
+  };
+
+  const handleReady = () => {
+    setReady(true);
+    try {
+      playerRef.current?.seekTo(startSec, "seconds");
+    } catch {
+      // ignore
+    }
+    // Lần mount đầu do user bấm → phát ngay (đúng gesture autoplay)
+    setPlaying(true);
+    setPlays((p) => p + 1);
+    startTimer();
+  };
+
+  return (
+    <div className="flex items-center gap-3">
+      {/* iframe ẩn 1x1 — chỉ lấy tiếng, không hiện hình */}
+      {mounted && (
+        <div aria-hidden="true" style={{ width: 1, height: 1, overflow: "hidden", position: "absolute", opacity: 0, pointerEvents: "none" }}>
+          <ReactPlayer
+            ref={playerRef as unknown as React.Ref<unknown>}
+            url={`https://www.youtube.com/watch?v=${youtubeId}`}
+            width="2px"
+            height="2px"
+            playing={playing}
+            controls={false}
+            muted={false}
+            onReady={handleReady}
+            onPause={() => {
+              setPlaying(false);
+              if (timerRef.current !== null) {
+                window.clearInterval(timerRef.current);
+                timerRef.current = null;
+              }
+            }}
+            onEnded={stopAtEnd}
+            config={{ youtube: { playerVars: { modestbranding: 1, rel: 0, playsinline: 1, controls: 0, fs: 0, hl: "ja" } } }}
+          />
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={handlePlay}
+        disabled={mounted && !ready}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sakura-500 text-sm text-white hover:bg-sakura-600 shadow-sm disabled:opacity-50"
+        aria-label="Nghe đoạn gốc trong video"
+        title="Nghe giọng gốc trong video"
+      >
+        {mounted && !ready ? "…" : playing ? "❚❚" : "▶"}
+      </button>
+      <span className="text-[11px] text-slate-500">
+        🎬 Giọng gốc {durSec.toFixed(1)}s{plays > 0 && ` · đã nghe ${plays} lần`}
+      </span>
+      {!playing && plays > 0 && (
+        <button type="button" onClick={handlePlay} className="text-[11px] font-semibold text-sakura-600 hover:underline">
+          Nghe lại
+        </button>
+      )}
+    </div>
+  );
+}
+
 function ListeningPlayButton({ text, fallback }: { text: string; fallback: string }) {
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -113,7 +269,7 @@ function ListeningPlayButton({ text, fallback }: { text: string; fallback: strin
   );
 }
 
-export default function VideoTest({ questions, videoId, open: controlledOpen, onClose, triggerLabel }: Props) {
+export default function VideoTest({ questions, videoId, open: controlledOpen, onClose, triggerLabel, youtubeId, subtitles }: Props) {
   const isControlled = controlledOpen !== undefined;
   const [internalOpen, setInternalOpen] = useState(false);
   const open = isControlled ? controlledOpen! : internalOpen;
@@ -313,15 +469,25 @@ export default function VideoTest({ questions, videoId, open: controlledOpen, on
                       </div>
                     )}
 
-                    {q.question_type === "LISTENING" && (
+                    {q.question_type === "LISTENING" &&
+                      (() => {
+                        const seg = youtubeId ? findSubtitleFor(q.correct_answer, subtitles) : null;
+                        const useOriginal = !!seg && !!youtubeId;
+                        return (
                       <div className="space-y-3">
                         <div className="flex items-center gap-3 rounded-md border border-dashed border-sakura-200 bg-sakura-50 px-3 py-3">
-                          <ListeningPlayButton text={speakText} fallback={q.content} />
+                          {useOriginal ? (
+                            <SegmentPlayButton youtubeId={youtubeId!} startMs={seg!.start_time_ms} endMs={seg!.end_time_ms} />
+                          ) : (
+                            <ListeningPlayButton text={speakText} fallback={q.content} />
+                          )}
                           <div className="flex-1">
                             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Nghe &amp; trả lời</p>
-                            <p className="text-sm text-slate-700">Bấm ▶ để nghe, sau đó chọn đáp án bên dưới</p>
+                            <p className="text-sm text-slate-700">
+                              {useOriginal ? "Nghe giọng gốc trong video, sau đó chọn đáp án" : "Bấm ▶ để nghe (giọng máy — video này chưa map được timestamp), sau đó chọn đáp án"}
+                            </p>
                           </div>
-                          <span className="text-[11px] text-sakura-500">ja-JP</span>
+                          <span className="text-[11px] text-sakura-500">{useOriginal ? "🎬 gốc" : "ja-JP"}</span>
                         </div>
                         {opts.length > 0 ? (
                           <div className="space-y-2">
@@ -356,7 +522,9 @@ export default function VideoTest({ questions, videoId, open: controlledOpen, on
                           />
                         )}
                       </div>
-                    )}
+                        );
+                      })()
+                    }
 
                     {!["VOCAB_CHOICE", "FILL_PARTICLE", "LISTENING"].includes(q.question_type) && (
                       <input

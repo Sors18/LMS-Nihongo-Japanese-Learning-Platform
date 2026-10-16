@@ -125,10 +125,12 @@ export default async function DashboardPage({ searchParams }: { searchParams?: P
     if (level) andFilters.push({ level: level as Prisma.EnumLevelFilter["equals"] });
     if (category) andFilters.push({ category: category as unknown as Prisma.EnumVideoCategoryFilter["equals"] });
     if (q) {
-      const words = q.split(/\s+/).filter(Boolean);
+      // MySQL: `contains` đã case-insensitive theo collation utf8mb4_*_ci.
+      // KHÔNG dùng `mode: 'insensitive'` (chỉ Postgres hỗ trợ — Prisma P2010 trên MySQL).
+      const words = q.split(/\s+/).filter(Boolean).slice(0, 5);
       const searchOR = words.flatMap((word) => [
-        { title: { contains: word, mode: 'insensitive' } as unknown as Prisma.StringFilter },
-        { youtube_id: { contains: word, mode: 'insensitive' } as unknown as Prisma.StringFilter },
+        { title: { contains: word } },
+        { youtube_id: { contains: word } },
       ]);
       if (searchOR.length) {
         andFilters.push({ OR: searchOR } as Prisma.VideoWhereInput);
@@ -156,25 +158,49 @@ export default async function DashboardPage({ searchParams }: { searchParams?: P
 
     const filteredSubtitleCount = videos.reduce((sum, v) => sum + v._count.subtitles, 0);
 
-    // Danh sách bộ anime (gom tập theo series) — hiện mục riêng trên trang chính
+    // Danh sách bộ anime (gom tập theo series) — GROUP BY trong SQL, chỉ 2 queries nhẹ
+    // thay vì load 500 rows về RAM rồi group bằng JS.
     let animeSeries: Array<{ series: string; episodes: number; coverYoutubeId: string; level: string }> = [];
     if (!category || category === "ANIME") {
       try {
-        const animeVideos = await prisma.video.findMany({
-          where: { category: "ANIME" as unknown as Prisma.EnumVideoCategoryFilter["equals"], NOT: { series: null } },
-          select: { series: true, youtube_id: true, level: true },
-          orderBy: { id: "asc" },
-          take: 500,
+        const groups = await prisma.video.groupBy({
+          by: ["series"],
+          where: {
+            category: "ANIME" as unknown as Prisma.EnumVideoCategoryFilter["equals"],
+            series: { not: null },
+          },
+          _count: { _all: true },
+          orderBy: { series: "asc" },
+          take: 100,
         });
-        const map = new Map<string, { episodes: number; coverYoutubeId: string; level: string }>();
-        for (const v of animeVideos) {
-          const name = (v.series ?? "").trim();
-          if (!name) continue;
-          const hit = map.get(name);
-          if (hit) hit.episodes += 1;
-          else map.set(name, { episodes: 1, coverYoutubeId: v.youtube_id, level: v.level });
+        const names = groups
+          .map((g) => (g.series ?? "").trim())
+          .filter(Boolean)
+          .slice(0, 100);
+        if (names.length) {
+          // Cover = tập id nhỏ nhất của mỗi bộ (1 query duy nhất)
+          const covers = await prisma.video.findMany({
+            where: {
+              category: "ANIME" as unknown as Prisma.EnumVideoCategoryFilter["equals"],
+              series: { in: names },
+            },
+            select: { series: true, youtube_id: true, level: true, id: true },
+            orderBy: { id: "asc" },
+            take: 500,
+          });
+          const firstBySeries = new Map<string, { coverYoutubeId: string; level: string }>();
+          for (const c of covers) {
+            const name = (c.series ?? "").trim();
+            if (!name || firstBySeries.has(name)) continue;
+            firstBySeries.set(name, { coverYoutubeId: c.youtube_id, level: c.level });
+          }
+          animeSeries = groups.flatMap((g) => {
+            const name = (g.series ?? "").trim();
+            const cover = firstBySeries.get(name);
+            if (!name || !cover) return [];
+            return [{ series: name, episodes: g._count._all, ...cover }];
+          });
         }
-        animeSeries = [...map.entries()].map(([series, info]) => ({ series, ...info }));
       } catch {
         animeSeries = [];
       }

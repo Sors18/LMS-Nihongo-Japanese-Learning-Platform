@@ -28,12 +28,9 @@ export default async function AdminVocabPage({
   if (q) {
     const tokens = q.split(/\s+/).filter(Boolean);
     if (tokens.length) {
+      // MySQL: bỏ `mode` (chỉ Postgres hỗ trợ) — collation utf8mb4_*_ci đã insensitive
       (where as Record<string, unknown>).AND = tokens.map((t) => ({
-        OR: [
-          { word: { contains: t, mode: "insensitive" } },
-          { reading: { contains: t, mode: "insensitive" } },
-          { meaning: { contains: t, mode: "insensitive" } },
-        ],
+        OR: [{ word: { contains: t } }, { reading: { contains: t } }, { meaning: { contains: t } }],
       }));
     }
   }

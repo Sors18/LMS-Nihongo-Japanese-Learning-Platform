@@ -9,14 +9,19 @@ export default async function TestPage({ params }: { params: Promise<{ id: strin
   const videoId = Number(id);
   if (!Number.isFinite(videoId)) notFound();
 
-  let video: { title: string } | null = null;
+  let video: { title: string; youtube_id: string } | null = null;
   let questions: Array<{ id: number; question_type: string; content: string; options: unknown; correct_answer: string }> = [];
+  let subtitles: Array<{ id: number; raw_text: string; start_time_ms: number; end_time_ms: number }> = [];
   let error: string | null = null;
 
   try {
-    const v = await prisma.video.findUnique({ where: { id: videoId }, select: { title: true } });
+    const v = await prisma.video.findUnique({
+      where: { id: videoId },
+      select: { title: true, youtube_id: true, subtitles: { select: { id: true, raw_text: true, start_time_ms: true, end_time_ms: true }, orderBy: { start_time_ms: "asc" } } },
+    });
     if (!v) notFound();
-    video = v;
+    video = { title: v.title, youtube_id: v.youtube_id };
+    subtitles = v.subtitles;
     const qs = await prisma.question.findMany({ where: { video_id: videoId }, orderBy: { id: "asc" } });
     questions = qs.map((q) => ({ id: q.id, question_type: q.question_type, content: q.content, options: q.options, correct_answer: q.correct_answer }));
   } catch (e) {
@@ -37,5 +42,13 @@ export default async function TestPage({ params }: { params: Promise<{ id: strin
     );
   }
 
-  return <TestClient videoId={videoId} questions={questions} title={video?.title ?? `Video #${videoId}`} />;
+  return (
+    <TestClient
+      videoId={videoId}
+      questions={questions}
+      title={video?.title ?? `Video #${videoId}`}
+      youtubeId={video?.youtube_id}
+      subtitles={subtitles}
+    />
+  );
 }

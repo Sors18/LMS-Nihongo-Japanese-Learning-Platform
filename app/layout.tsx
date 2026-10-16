@@ -7,7 +7,8 @@ import Navbar from "@/components/Navbar";
 
 export const metadata: Metadata = {
   title: "LMS Nihongo — Học tiếng Nhật qua Video",
-  description: "Nền tảng học tiếng Nhật qua video YouTube với phụ đề đồng bộ, NLP kuromoji và flashcard."
+  description: "Nền tảng học tiếng Nhật qua video YouTube với phụ đề đồng bộ, NLP kuromoji và flashcard.",
+  icons: { icon: "/icon.svg" },
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

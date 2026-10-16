@@ -1,7 +1,10 @@
 import "server-only";
 import { createHash } from "crypto";
-import { mkdir, writeFile, stat } from "fs/promises";
+import { mkdir, writeFile, stat, readdir, unlink } from "fs/promises";
 import path from "path";
+
+// Giới hạn số file cache để public/tts không phình vô hạn (mỗi mp3 ~10-50KB).
+const MAX_TTS_FILES = Number(process.env.TTS_MAX_FILES ?? 500) || 500;
 
 /**
  * Server TTS — phát âm ja-JP ổn định, không phụ thuộc voice của máy chấm.
@@ -49,9 +52,34 @@ async function fetchMp3(text: string, lang: string): Promise<Buffer> {
   return Buffer.concat(parts);
 }
 
+/** Xóa file cũ nhất khi vượt quota — best-effort, không chặn request chính. */
+async function pruneTtsCache(): Promise<void> {
+  try {
+    const files = await readdir(DIR).catch(() => [] as string[]);
+    const mp3s = files.filter((f) => f.endsWith(".mp3"));
+    if (mp3s.length <= MAX_TTS_FILES) return;
+    const withTime = await Promise.all(
+      mp3s.map(async (f) => {
+        try {
+          const s = await stat(path.join(DIR, f));
+          return { f, mtime: s.mtimeMs };
+        } catch {
+          return { f, mtime: 0 };
+        }
+      })
+    );
+    withTime.sort((a, b) => a.mtime - b.mtime);
+    const toDelete = withTime.slice(0, withTime.length - MAX_TTS_FILES);
+    await Promise.all(toDelete.map(({ f }) => unlink(path.join(DIR, f)).catch(() => {})));
+  } catch {
+    // ignore — cache prune không được làm hỏng TTS
+  }
+}
+
 export async function ensureTtsMp3(text: string, lang = "ja"): Promise<{ file: string; url: string; cached: boolean }> {
   const t = (text ?? "").trim();
   if (!t) throw new Error("TTS text rỗng");
+  if (!/^(ja|vi|en)$/.test(lang)) throw new Error("TTS lang không hỗ trợ (ja|vi|en)");
   const key = ttsKey(t, lang);
   const file = path.join(DIR, `${key}.mp3`);
   if (await exists(file)) return { file, url: `/tts/${key}.mp3`, cached: true };
@@ -59,5 +87,7 @@ export async function ensureTtsMp3(text: string, lang = "ja"): Promise<{ file: s
   const buf = await fetchMp3(t, lang);
   if (buf.length < 500) throw new Error("TTS upstream trả file quá nhỏ");
   await writeFile(file, buf);
+  // Dọn nền sau khi ghi xong
+  void pruneTtsCache();
   return { file, url: `/tts/${key}.mp3`, cached: false };
 }

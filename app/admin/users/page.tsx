@@ -33,10 +33,8 @@ export default async function AdminUsersPage({ searchParams }: { searchParams?: 
   try {
     const where: Prisma.UserWhereInput = {};
     if (q) {
-      where.OR = [
-        { email: { contains: q, mode: "insensitive" } as unknown as Prisma.StringFilter },
-        { name: { contains: q, mode: "insensitive" } as unknown as Prisma.StringFilter },
-      ];
+      // MySQL: bỏ `mode: 'insensitive'` — collation đã case-insensitive
+      where.OR = [{ email: { contains: q } }, { name: { contains: q } }];
     }
 
     total = await prisma.user.count({ where });

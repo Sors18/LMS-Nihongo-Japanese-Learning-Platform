@@ -1,12 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashPassword, createSession } from "@/lib/auth";
+import { checkRateLimit, rateKey, rateLimitedResponse, sweepRateBuckets, RATE_PRESETS } from "@/lib/rateLimit";
 
 export const dynamic = "force-dynamic";
 
 const VALID_LEVELS = new Set(["N5", "N4", "N3", "N2", "N1"]);
+// bcrypt chỉ dùng 72 byte đầu — dài hơn cũng không tăng bảo mật, chặn để rõ ràng.
+const MAX_PASSWORD_LEN = 72;
 
 export async function POST(req: NextRequest) {
+  // Chống tạo acc hàng loạt / spam DB
+  const rl = checkRateLimit(
+    rateKey(req as unknown as Request, "register"),
+    RATE_PRESETS.auth.limit,
+    RATE_PRESETS.auth.windowMs
+  );
+  sweepRateBuckets();
+  if (!rl.allowed) return rateLimitedResponse(rl.resetMs);
   try {
     const raw = await req.json().catch(() => null);
 
@@ -36,6 +47,12 @@ export async function POST(req: NextRequest) {
 
     if (password.length < 6) {
       return NextResponse.json({ error: "Mật khẩu phải ít nhất 6 ký tự" }, { status: 400 });
+    }
+    if (password.length > MAX_PASSWORD_LEN) {
+      return NextResponse.json({ error: `Mật khẩu tối đa ${MAX_PASSWORD_LEN} ký tự` }, { status: 400 });
+    }
+    if (name.length > 100) {
+      return NextResponse.json({ error: "Tên tối đa 100 ký tự" }, { status: 400 });
     }
 
     const existing = await prisma.user.findUnique({ where: { email } });

@@ -9,6 +9,7 @@ const ADMIN_LINKS = [
   { href: "/admin/videos", label: "Quản lý Video", desc: "Danh sách, sửa, xóa", icon: "🎬" },
   { href: "/admin/insert", label: "+ Video", desc: "Thêm video YouTube", icon: "➕" },
   { href: "/admin/subtitle", label: "+ Phụ đề", desc: "Chèn / sửa phụ đề", icon: "💬" },
+  { href: "/admin/questions", label: "Câu hỏi", desc: "Xem, sửa, xóa đề", icon: "❓" },
   { href: "/admin/users", label: "Users", desc: "Role, level, xóa", icon: "👥" },
   { href: "/admin/vocab", label: "Vocab", desc: "Từ vựng", icon: "📚" },
   { href: "/admin/grammar", label: "Grammar", desc: "Ngữ pháp", icon: "📝" },

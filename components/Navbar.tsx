@@ -57,11 +57,15 @@ export default function Navbar({ user, isAdmin }: NavbarProps) {
       <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
         <a
           href="/"
-          className="font-bold text-lg tracking-tight text-slate-800 shrink-0"
+          className="flex items-center gap-2 font-bold text-lg tracking-tight text-slate-800 shrink-0"
           onClick={() => setOpen(false)}
         >
-          <span className="text-sakura-500">🌸</span> LMS Nihongo{" "}
-          <span className="font-light text-sakura-400">Sakura</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icon.svg" alt="LMS Nihongo logo" width={32} height={32} className="h-8 w-8 rounded-full shadow-sm" />
+          <span>
+            LMS Nihongo{" "}
+            <span className="font-light text-sakura-400">Sakura</span>
+          </span>
         </a>
 
         {/* Desktop nav - hidden until lg */}

@@ -80,31 +80,93 @@ function buildPrompt(items: GeminiVocabItem[]): string {
   ].join("\n");
 }
 
-function extractJsonArray(text: string): unknown[] | null {
-  const t = text.replace(/```json|```/g, "").trim();
-  const start = t.indexOf("[");
-  const end = t.lastIndexOf("]");
-  if (start < 0 || end <= start) return null;
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** POST tới Gemini kèm retry/backoff cho 429 + 5xx + lỗi mạng (tối đa 3 lần). */
+async function fetchGeminiWithRetry(url: string, body: unknown, maxRetries = 3): Promise<Response> {
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      // Thành công hoặc lỗi client 4xx (trừ 429) → không retry
+      if (res.ok || (res.status >= 400 && res.status < 500 && res.status !== 429)) return res;
+      // 429 / 5xx → retry sau backoff; đóng body để khỏi leak socket
+      try {
+        await res.text().catch(() => "");
+      } catch {
+        // ignore
+      }
+      lastErr = new Error(`Gemini upstream ${res.status}`);
+    } catch (e) {
+      lastErr = e;
+    }
+    if (attempt < maxRetries) {
+      // exponential backoff 600ms → 1200ms → 2400ms + jitter
+      const delay = 600 * 2 ** attempt + Math.floor(Math.random() * 200);
+      await sleep(delay);
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("Gemini fetch failed");
+}
+
+function tryParseJsonArray(slice: string): unknown[] | null {
   try {
-    const parsed: unknown = JSON.parse(t.slice(start, end + 1));
+    const parsed: unknown = JSON.parse(slice);
     return Array.isArray(parsed) ? parsed : null;
   } catch {
     return null;
   }
 }
 
+function extractJsonArray(text: string): unknown[] | null {
+  // Bóc markdown fence (```json ... ``` / ``` ... ```) trước
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const t = (fence?.[1] ?? text.replace(/```json|```/g, "")).trim();
+  // Thử parse toàn bộ trước (khi model đã trả application/json thuần)
+  const whole = tryParseJsonArray(t);
+  if (whole) return whole;
+  // Quét mọi cặp [ ... ] từ ngoài vào trong (chịu được text rác trước/sau JSON)
+  // Lấy candidate dài nhất parse được thay vì blind lastIndexOf
+  let best: unknown[] | null = null;
+  let bestLen = -1;
+  for (let start = t.indexOf("["); start >= 0; start = t.indexOf("[", start + 1)) {
+    for (let end = t.lastIndexOf("]"); end > start; end = t.lastIndexOf("]", end - 1)) {
+      const slice = t.slice(start, end + 1);
+      // Giới hạn độ dài thử để khỏi O(n²) với response lớn
+      if (slice.length > 60000) continue;
+      const parsed = tryParseJsonArray(slice);
+      if (parsed && slice.length > bestLen) {
+        best = parsed;
+        bestLen = slice.length;
+        break; // với start này đã có match dài nhất → sang start tiếp theo
+      }
+    }
+    // Nếu đã tìm được và candidate bao gần hết text thì dừng sớm
+    if (best && bestLen > t.length * 0.5) break;
+  }
+  if (best) return best;
+  // Fallback cuối: sửa trailing comma thường gặp ("..., ]" / "..., }")
+  const repaired = t.replace(/,\s*([}\]])/g, "$1");
+  const s = repaired.indexOf("[");
+  const e = repaired.lastIndexOf("]");
+  if (s >= 0 && e > s) return tryParseJsonArray(repaired.slice(s, e + 1));
+  return null;
+}
+
 async function resolveChunk(key: string, items: GeminiVocabItem[]): Promise<void> {
   let text = "";
   try {
-    const res = await fetch(
+    const res = await fetchGeminiWithRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(MODEL)}:generateContent?key=${encodeURIComponent(key)}`,
       {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: buildPrompt(items) }] }],
-          generationConfig: { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 4096 },
-        }),
+        contents: [{ parts: [{ text: buildPrompt(items) }] }],
+        generationConfig: { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 4096 },
       }
     );
     if (!res.ok) return;
@@ -216,15 +278,11 @@ async function detectGrammarChunk(
 ): Promise<void> {
   let text = "";
   try {
-    const res = await fetch(
+    const res = await fetchGeminiWithRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`,
       {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: buildGrammarPrompt(items) }] }],
-          generationConfig: { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 8192 },
-        }),
+        contents: [{ parts: [{ text: buildGrammarPrompt(items) }] }],
+        generationConfig: { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 8192 },
       }
     );
     if (!res.ok) return;

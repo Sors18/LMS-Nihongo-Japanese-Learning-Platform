@@ -10,6 +10,7 @@ import {
   type ChatMsg,
   type VideoContext,
 } from "@/lib/pekora";
+import { checkRateLimit, rateKey, rateLimitedResponse, sweepRateBuckets, RATE_PRESETS } from "@/lib/rateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -95,6 +96,7 @@ async function callOpenAI(message: string, history: { role: string; content: str
 }
 
 export async function POST(req: NextRequest) {
+  // auth trước, rate-limit theo user id (chống 1 user spam hết quota Gemini)
   // auth
   let user: { id: string } | null = null;
   try {
@@ -112,6 +114,13 @@ export async function POST(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized - vui lòng đăng nhập peko! 🐰" }, { status: 401 });
   }
+  const rl = checkRateLimit(
+    rateKey(req as unknown as Request, "chat", user.id),
+    RATE_PRESETS.chat.limit,
+    RATE_PRESETS.chat.windowMs
+  );
+  sweepRateBuckets();
+  if (!rl.allowed) return rateLimitedResponse(rl.resetMs);
 
   let body: unknown;
   try {

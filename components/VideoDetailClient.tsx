@@ -95,7 +95,7 @@ export default function VideoDetailClient({
         <div className="grid gap-4">
           <VocabExtractor videoId={videoId} isAdmin={isAdmin} />
           <GrammarExtractor videoId={videoId} />
-          <AutoTestGenerator videoId={videoId} existingCount={questions.length} />
+          <AutoTestGenerator videoId={videoId} existingCount={questions.length} isAdmin={isAdmin} />
         </div>
       </div>
 
@@ -175,8 +175,16 @@ export default function VideoDetailClient({
         )}
       </div>
 
-      {/* Modal test — chỉ mở khi bấm nút, không popup tự động */}
-      <VideoTest questions={questions} videoId={videoId} open={showTest} onClose={() => setShowTest(false)} />
+      {/* Modal test — chỉ mở khi bấm nút, không popup tự động.
+          Truyền youtubeId + subtitles để câu LISTENING phát đoạn gốc thay vì giọng máy. */}
+      <VideoTest
+        questions={questions}
+        videoId={videoId}
+        open={showTest}
+        onClose={() => setShowTest(false)}
+        youtubeId={youtubeId}
+        subtitles={subtitles.map((s) => ({ id: s.id, raw_text: s.raw_text, start_time_ms: s.start_time_ms, end_time_ms: s.end_time_ms }))}
+      />
     </div>
   );
 }

@@ -37,22 +37,18 @@ export default async function AdminGrammarPage({
   let error: string | null = null;
 
   try {
+    // MySQL: bỏ `mode` (chỉ Postgres) — collation đã insensitive
     type GrammarWhere = {
-      OR?: Array<{ structure: { contains: string; mode?: "insensitive" | "default" } } | { explanation: { contains: string; mode?: "insensitive" | "default" } }>;
-      AND?: Array<{
-        OR: Array<{ structure: { contains: string; mode?: "insensitive" | "default" } } | { explanation: { contains: string; mode?: "insensitive" | "default" } }>;
-      }>;
+      OR?: Array<{ structure: { contains: string } } | { explanation: { contains: string } }>;
+      AND?: Array<{ OR: Array<{ structure: { contains: string } } | { explanation: { contains: string } }> }>;
       level?: Level;
     };
     const where: GrammarWhere = {};
     if (q) {
-      const tokens = q.split(/\s+/).filter(Boolean);
+      const tokens = q.split(/\s+/).filter(Boolean).slice(0, 5);
       if (tokens.length) {
         where.AND = tokens.map((t) => ({
-          OR: [
-            { structure: { contains: t, mode: "insensitive" as const } },
-            { explanation: { contains: t, mode: "insensitive" as const } },
-          ],
+          OR: [{ structure: { contains: t } }, { explanation: { contains: t } }],
         }));
       }
     }

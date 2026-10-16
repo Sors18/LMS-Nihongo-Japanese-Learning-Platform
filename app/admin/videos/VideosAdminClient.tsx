@@ -330,9 +330,13 @@ export default function VideosAdminClient({
                       {v._count.subtitles} sub
                     </a>
                     <div className="flex items-center gap-1">
-                      <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 font-semibold text-sky-700">
-                        Q {v._count.questions}
-                      </span>
+                      <a
+                        href={`/admin/questions?videoId=${v.id}`}
+                        title="Xem / sửa câu hỏi"
+                        className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 font-semibold text-sky-700 hover:bg-sky-100"
+                      >
+                        Q {v._count.questions} ✎
+                      </a>
                       <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">
                         G {v._count.grammar_points}
                       </span>
@@ -371,6 +375,13 @@ export default function VideosAdminClient({
               className="flex items-center justify-between rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-100"
             >
               <span>💬 Phụ đề: {editing._count.subtitles} dòng</span>
+              <span aria-hidden>→</span>
+            </a>
+            <a
+              href={`/admin/questions?videoId=${editing.id}`}
+              className="flex items-center justify-between rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-100"
+            >
+              <span>❓ Câu hỏi: {editing._count.questions} câu — xem / sửa</span>
               <span aria-hidden>→</span>
             </a>
             <div>

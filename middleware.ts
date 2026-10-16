@@ -3,6 +3,11 @@ import type { NextRequest } from "next/server";
 
 const COOKIE_NAME = "lms_token";
 
+// Giữ đồng bộ với lib/env.ts (Edge không import được server-only nên duplicate có chủ ý).
+// Quy tắc duy nhất: prod bắt buộc NEXTAUTH_SECRET >= 32 ký tự; dev fallback kèm warn 1 lần.
+const FALLBACK_SECRET = "lms-nihongo-secret-change-me";
+let warnedFallback = false;
+
 function getSecret(): string {
   const raw = (process.env.NEXTAUTH_SECRET ?? "").trim();
   if (raw) {
@@ -14,7 +19,11 @@ function getSecret(): string {
   if (process.env.NODE_ENV === "production") {
     throw new Error("Thiếu NEXTAUTH_SECRET khi production");
   }
-  return "lms-nihongo-secret-change-me";
+  if (!warnedFallback) {
+    warnedFallback = true;
+    console.warn("[middleware] NEXTAUTH_SECRET chưa set — dùng fallback dev-only.");
+  }
+  return FALLBACK_SECRET;
 }
 
 function base64UrlDecode(input: string): string {

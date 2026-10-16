@@ -5,6 +5,7 @@ import {
   buildProperNounMeaning,
   mergeMixedScriptTokens,
 } from "../lib/vocabFilter";
+import { getKnownPersonNames, isNameOnlyLine } from "../lib/properNames";
 
 const tok = (o: Record<string, string>) => ({
   surface_form: o.surface_form ?? "",
@@ -49,6 +50,26 @@ describe("proper nouns", () => {
     assert.equal(buildProperNounMeaning("任天堂", "org"), "Tên tổ chức: 任天堂");
     assert.equal(buildProperNounMeaning("ムーナ", "proper"), "Tên riêng: ムーナ");
     assert.equal(buildProperNounMeaning("ムーナ", null), "ムーナ");
+  });
+
+  it("getKnownPersonNames chứa tên người, không lẫn chiêu thức", () => {
+    const names = getKnownPersonNames();
+    assert.ok(names.includes("五条悟"));
+    assert.ok(names.includes("乙骨"));
+    assert.ok(!names.includes("無量空処")); // chiêu thức kind proper → loại
+    assert.ok(!names.includes("領域展開"));
+  });
+
+  it("isNameOnlyLine: tên trần / quote / kính ngữ → true; từ thường/câu dài → false", () => {
+    assert.equal(isNameOnlyLine("五条"), true);
+    assert.equal(isNameOnlyLine("「乙骨くん」"), true);
+    assert.equal(isNameOnlyLine("ジョウゴ!"), true);
+    assert.equal(isNameOnlyLine("TẬP 59: KẾT GIỚI SENDAI"), false); // không phải tên → để hasJapanese lo
+    assert.equal(isNameOnlyLine("術式"), false); // từ thường 2 kanji → không đoán bừa
+    assert.equal(isNameOnlyLine("石流の術式は呪力の放出"), false); // câu dài nhắc tên → giữ (tài liệu nghe hợp lệ)
+    assert.equal(isNameOnlyLine(""), false);
+    assert.equal(isNameOnlyLine("虎杖", new Set(["石流"])), true);
+    assert.equal(isNameOnlyLine("石流", new Set(["石流"])), true); // tên học từ DB
   });
 
   it("gộp giữ nguyên pos_detail (未熟 có detail vẫn nhận diện sau gộp)", () => {

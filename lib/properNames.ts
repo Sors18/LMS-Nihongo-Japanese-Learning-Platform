@@ -117,3 +117,30 @@ export function buildKnownProperMeaning(word: string): string | null {
   const work = info.work ? `, ${info.work}` : "";
   return `Tên ${kindLabel}: ${word} (${info.reading} — ${info.romaji}${work})`;
 }
+
+/** Tất cả tên người đã biết — dùng để loại câu hỏi tên người khỏi đề thi. */
+export function getKnownPersonNames(): string[] {
+  return Object.entries(KNOWN)
+    .filter(([, v]) => v.kind === "person")
+    .map(([k]) => k);
+}
+
+const HONORIFICS_RE = /(さん|くん|ちゃん|様|氏|先生|先輩|殿)$/;
+
+/**
+ * Dòng phụ đề có phải CHỈ là tên người (VD "五条", "「乙骨くん」")?
+ * Câu như vậy không có giá trị làm đề (nghe/vocab) → caller bỏ qua.
+ * - extraNames: tên người học được từ DB (nghĩa "Tên người: ...").
+ * - Cố ý KHÔNG đoán bằng isKanjiNameLike để khỏi gắn nhãn nhầm từ thường (術式...).
+ */
+export function isNameOnlyLine(text: string, extraNames?: Set<string>): boolean {
+  let t = (text ?? "").trim();
+  if (!t) return false;
+  t = t.replace(/^[「『"“'({\[]+/, "").replace(/[」』"”')}\].,!?！？。、…〜～・\s]+$/, "").trim();
+  t = t.replace(HONORIFICS_RE, "").trim();
+  if (!t || t.length > 12) return false;
+  const known = getKnownProper(t);
+  if (known && known.kind === "person") return true;
+  if (extraNames?.has(t)) return true;
+  return false;
+}

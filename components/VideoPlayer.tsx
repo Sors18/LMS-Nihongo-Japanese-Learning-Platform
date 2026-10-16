@@ -56,6 +56,29 @@ export function arrowSeekDeltaMs(key: string): number | null {
   if (key === "ArrowRight") return 5000;
   return null;
 }
+
+/** Nhãn tiếng Việt cho mã chất lượng YT (hd1080, large, medium...) */
+const QUALITY_LABEL_MAP: Record<string, string> = {
+  auto: "Tự động",
+  default: "Tự động",
+  highres: "Cao nhất",
+  hd2160: "2160p",
+  hd1440: "1440p",
+  hd1080: "1080p",
+  hd720: "720p",
+  large: "480p",
+  medium: "360p",
+  small: "240p",
+  tiny: "144p",
+};
+export function qualityLabel(code: string): string {
+  return QUALITY_LABEL_MAP[code] ?? code;
+}
+/** Chữ gọn hiện trên nút ⚙ */
+export function qualityShort(code: string): string {
+  if (code === "auto" || code === "default") return "Auto";
+  return QUALITY_LABEL_MAP[code] ?? code;
+}
 /**
  * VideoPlayer — client component wrapping react-player (YouTube).
  * - Uses useRef for player instance
@@ -86,6 +109,10 @@ export default function VideoPlayer({
   const [showOverlay, setShowOverlay] = useState(true);
   const [volume, setVolume] = useState(0.8);
   const [muted, setMuted] = useState(false);
+  // Chất lượng YouTube — qua IFrame API (get/setPlaybackQuality)
+  const [quality, setQuality] = useState<string>("auto");
+  const [qualities, setQualities] = useState<string[]>([]);
+  const [showQualityMenu, setShowQualityMenu] = useState(false);
   // Tự ẩn điều khiển + chuột khi không tương tác (kiểu YouTube, nhất là lúc fullscreen)
   const [showControls, setShowControls] = useState(true);
   // Video đã phát hết → che endscreen YouTube (video khác / logo) bằng màn hình của web
@@ -157,7 +184,7 @@ export default function VideoPlayer({
         if (playing) setShowControls(false);
         return playing;
       });
-    }, 3000);
+    }, 4500);
   }, []);
 
   useEffect(() => {
@@ -168,6 +195,59 @@ export default function VideoPlayer({
       pokeControls();
     }
   }, [isPlaying, pokeControls]);
+
+  // Lấy YT player nội bộ (2 kiểu react-player cũ/mới) để chỉnh chất lượng
+  const getYtPlayer = useCallback(() => {
+    try {
+      const ref = playerRef.current as unknown as { getInternalPlayer?: (h?: string) => unknown } | null;
+      let yt: unknown = null;
+      try {
+        yt = ref?.getInternalPlayer?.("youtube");
+      } catch {}
+      if (!yt) {
+        try {
+          yt = (ref as unknown as { getInternalPlayer?: () => unknown })?.getInternalPlayer?.();
+        } catch {}
+      }
+      return yt as {
+        getAvailableQualityLevels?: () => string[];
+        setPlaybackQuality?: (q: string) => void;
+        getPlaybackQuality?: () => string;
+      } | null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Đọc mức chất lượng khả dụng + mức hiện tại — gọi sau ready/play và khi mở menu
+  const refreshQualities = useCallback(() => {
+    try {
+      const yt = getYtPlayer();
+      const levels = yt?.getAvailableQualityLevels?.();
+      if (Array.isArray(levels) && levels.length > 0) {
+        const uniq = [...new Set(levels.filter((l) => typeof l === "string" && l !== "default"))];
+        setQualities(uniq);
+      }
+      const cur = yt?.getPlaybackQuality?.();
+      if (typeof cur === "string" && cur) setQuality(cur === "default" ? "auto" : cur);
+    } catch {
+      // ignore — chưa sẵn sàng thì giữ Auto
+    }
+  }, [getYtPlayer]);
+
+  const applyQuality = useCallback(
+    (q: string) => {
+      try {
+        getYtPlayer()?.setPlaybackQuality?.(q === "auto" ? "default" : q);
+      } catch {
+        // ignore
+      }
+      setQuality(q);
+      setShowQualityMenu(false);
+      pokeControls();
+    },
+    [getYtPlayer, pokeControls]
+  );
 
   const handleReady = useCallback(() => {
     // Tắt triệt để caption YouTube: playerVars cc_load_policy=0 chỉ mặc định,
@@ -201,7 +281,9 @@ export default function VideoPlayer({
       setCurrentMs(startAtMs);
       onTimeUpdate?.(startAtMs);
     }
-  }, [startAtMs, onTimeUpdate]);
+    // Mức chất lượng chỉ có sau khi player sẵn sàng — đọc trễ 1 nhịp
+    window.setTimeout(() => refreshQualities(), 800);
+  }, [startAtMs, onTimeUpdate, refreshQualities]);
   const handleDuration = useCallback(
     (secs: number) => {
       if (typeof secs === "number" && !Number.isNaN(secs) && secs > 0) {
@@ -217,8 +299,9 @@ export default function VideoPlayer({
     setIsPlaying(true);
     setEnded(false);
     startTimer();
+    refreshQualities();
     onPlay?.();
-  }, [startTimer, onPlay]);
+  }, [startTimer, refreshQualities, onPlay]);
 
   const handlePause = useCallback(() => {
     setIsPlaying(false);
@@ -309,19 +392,37 @@ export default function VideoPlayer({
     [pokeControls]
   );
 
-  // Tua bằng phím ←/→ kiểu YouTube khi video là chủ thể tương tác (đang focus).
+  // Toàn màn hình kiểu YouTube — nút ⛶ bấm được, phím F cũng được
+  const toggleFullscreen = useCallback(() => {
+    try {
+      if (document.fullscreenElement) {
+        void document.exitFullscreen().catch(() => {});
+      } else {
+        containerRef.current?.requestFullscreen?.();
+      }
+    } catch {
+      // ignore — trình duyệt không hỗ trợ
+    }
+  }, []);
+
+  // Tua bằng phím ←/→ + F toàn màn hình kiểu YouTube khi video đang focus.
   // Bỏ qua khi focus trong input (thanh volume) để không double-handle.
   const handleSurfaceKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       const el = e.target as HTMLElement | null;
       const tag = el?.tagName?.toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select" || el?.isContentEditable) return;
+      if (e.key === "f" || e.key === "F") {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
       const delta = arrowSeekDeltaMs(e.key);
       if (delta === null) return;
       e.preventDefault();
       seekBy(delta);
     },
-    [seekBy]
+    [seekBy, toggleFullscreen]
   );
 
   const progressPct =
@@ -337,8 +438,8 @@ export default function VideoPlayer({
         onContextMenu={(e) => e.preventDefault()}
         tabIndex={0}
         role="region"
-        aria-label="Khung video — bấm để focus, phím ←/→ tua 5 giây kiểu YouTube"
-        title="Bấm vào video để focus • ←/→ tua 5s"
+          aria-label="Khung video — bấm để focus, phím ←/→ tua 5 giây, F toàn màn hình kiểu YouTube"
+          title="Bấm vào video để focus • ←/→ tua 5s • F toàn màn hình"
         onKeyDown={handleSurfaceKeyDown}
         className={`relative aspect-video w-full overflow-hidden rounded-lg bg-black group focus:outline-none focus-visible:ring-2 focus-visible:ring-sakura-400 ${showControls ? "" : "cursor-none"}`}
       >
@@ -372,18 +473,25 @@ export default function VideoPlayer({
             },
           }}
         />
-        {/* Che header YouTube gốc (title + channel) bằng dải đen mỏng, không hiện chữ. */}
+        {/* Che tiêu đề/kênh YouTube phía trên (YouTube bắt buộc hiện khi hover/pause,
+            không có tham số tắt; gradient mờ không che nổi chữ trắng trên nền sáng nên phải
+            đặc 44px vừa đủ che dòng chữ + loang mềm 28px bên dưới cho đỡ thô).
+            Chỉ hiện cùng lúc với controls. */}
         <div
-          data-testid="video-title-mask"
+          data-testid="video-title-scrim"
           aria-hidden="true"
-          className="pointer-events-none absolute left-0 right-0 top-0 z-10 h-[64px] bg-black sm:h-[72px]"
-        />
-        {/* Che logo/watermark + dải "video khác" đáy YouTube:
-            dải đen kín toàn chiều ngang, luôn hiện kể cả khi thanh controls tự ẩn */}
+          className={`pointer-events-none absolute left-0 right-0 top-0 z-10 transition-opacity duration-300 ${showControls ? "opacity-100" : "opacity-0"}`}
+        >
+          <div className="h-[44px] bg-black" />
+          <div className="h-[28px] bg-gradient-to-b from-black to-transparent" />
+        </div>
+        {/* Che logo/watermark + dải "video khác" đáy YouTube — chỉ hiện cùng thanh controls
+            khi di chuột/tương tác; lúc không hover thì ẩn hẳn.
+            Cao 54px để che kín logo (42px cũ vẫn hở một phần). */}
         <div
           data-testid="video-logo-mask"
           aria-hidden="true"
-          className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 h-[42px] bg-black"
+          className={`pointer-events-none absolute bottom-0 left-0 right-0 z-10 h-[54px] bg-black transition-opacity duration-300 ${showControls ? "opacity-100" : "opacity-0"}`}
         />
         {/* Overlay phụ đề kiểu YouTube: nghỉ (ẩn controls) → đè LÊN TRÊN dải đen che logo;
             (z-20 cao hơn logo-mask z-10 nên dòng Việt không bị che);
@@ -522,6 +630,42 @@ export default function VideoPlayer({
                   className="h-1 w-0 cursor-pointer appearance-none overflow-hidden rounded-full bg-white/25 opacity-0 transition-all duration-200 accent-white group-hover/vol:w-16 group-hover/vol:opacity-100 group-hover/vol:overflow-visible max-sm:w-16 max-sm:opacity-100 max-sm:overflow-visible [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
                 />
               </div>
+              {/* Chất lượng — qua YT IFrame API, menu hiện mức video này có */}
+              <div className="relative">
+                <button
+                  aria-label={`Chất lượng video (đang: ${qualityLabel(quality)})`}
+                  title={`Chất lượng: ${qualityLabel(quality)} — bấm để đổi`}
+                  onClick={() => {
+                    refreshQualities();
+                    setShowQualityMenu((v) => !v);
+                    pokeControls();
+                  }}
+                  className="rounded bg-white/20 px-2 py-1 text-xs font-bold text-white hover:bg-white/30"
+                >
+                  ⚙ {qualityShort(quality)}
+                </button>
+                {showQualityMenu && (
+                  <>
+                    <button
+                      aria-label="Đóng menu chất lượng"
+                      onClick={() => setShowQualityMenu(false)}
+                      className="fixed inset-0 z-30 cursor-default bg-transparent"
+                    />
+                    <div className="absolute bottom-full right-0 z-40 mb-2 min-w-[130px] overflow-hidden rounded-lg border border-white/10 bg-black/95 py-1 shadow-xl">
+                      <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-white/50">Chất lượng</p>
+                      {["auto", ...qualities.filter((q) => q !== "auto")].map((q) => (
+                        <button
+                          key={q}
+                          onClick={() => applyQuality(q)}
+                          className={`block w-full px-3 py-1.5 text-left text-xs hover:bg-white/10 ${q === quality ? "font-bold text-white" : "text-white/70"}`}
+                        >
+                          {q === quality ? "✓ " : ""}{qualityLabel(q)}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
               <button
                 aria-label={showOverlay ? "Ẩn phụ đề trên video" : "Hiện phụ đề trên video"}
                 title={showOverlay ? "Ẩn phụ đề trên video" : "Hiện phụ đề trên video"}
@@ -531,11 +675,9 @@ export default function VideoPlayer({
                 CC
               </button>
               <button
-                aria-label="Toàn màn hình"
-                onClick={() => {
-                  const el = containerRef.current;
-                  if (el?.requestFullscreen) el.requestFullscreen();
-                }}
+                aria-label="Toàn màn hình (phím F)"
+                title="Toàn màn hình (phím F)"
+                onClick={toggleFullscreen}
                 className="rounded bg-white/20 px-2 py-1 text-xs text-white hover:bg-white/30"
               >
                 ⛶

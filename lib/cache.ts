@@ -15,9 +15,11 @@ type CacheEntry<V> = {
 export class MemoryTTLCache<K, V> {
   private store = new Map<K, CacheEntry<V>>();
   private defaultTtlMs: number;
+  private maxEntries: number;
 
-  constructor(defaultTtlMs = 3_600_000) {
+  constructor(defaultTtlMs = 3_600_000, maxEntries = 1000) {
     this.defaultTtlMs = defaultTtlMs;
+    this.maxEntries = Math.max(1, maxEntries);
   }
 
   get(key: K): V | undefined {
@@ -31,7 +33,32 @@ export class MemoryTTLCache<K, V> {
   }
 
   set(key: K, value: V, ttlMs = this.defaultTtlMs): void {
+    // Refresh vị trí LRU khi key đã tồn tại
+    if (this.store.has(key)) this.store.delete(key);
     this.store.set(key, { value, expiresAt: Date.now() + ttlMs });
+    // Chặn leak RAM: quá max → xóa oldest (Map giữ thứ tự insert) + quét expired
+    if (this.store.size > this.maxEntries) {
+      const over = this.store.size - this.maxEntries;
+      let removed = 0;
+      for (const k of this.store.keys()) {
+        this.store.delete(k);
+        if (++removed >= over) break;
+      }
+    }
+    // Quét lười mỗi ~100 lần set để không tốn CPU per-request
+    if (this.store.size % 100 === 0) this.sweepExpired();
+  }
+
+  /** Xóa entry hết hạn — gọi định kỳ, không chặn request. */
+  sweepExpired(now = Date.now()): number {
+    let removed = 0;
+    this.store.forEach((entry, k) => {
+      if (now > entry.expiresAt) {
+        this.store.delete(k);
+        removed++;
+      }
+    });
+    return removed;
   }
 
   has(key: K): boolean {
@@ -56,9 +83,10 @@ export class MemoryTTLCache<K, V> {
   }
 }
 
-// Global singletons — sống suốt server lifetime, không allocate per-request
-export const tokenMemoryCache = new MemoryTTLCache<string, KuromojiToken[]>(3_600_000);
-export const vocabMemoryCache = new MemoryTTLCache<string, unknown>(3_600_000);
+// Global singletons — sống suốt server lifetime, có cap chống leak RAM.
+// token: câu ngắn, trùng nhiều → 300 entries / 1h. vocab: từ lẻ → 2000 entries / 1h.
+export const tokenMemoryCache = new MemoryTTLCache<string, KuromojiToken[]>(3_600_000, 300);
+export const vocabMemoryCache = new MemoryTTLCache<string, unknown>(3_600_000, 2000);
 
 // ---------------------------------------------------------------------------
 // Cached token helper — dùng MemoryTTLCache cross-request + singleton tokenizer

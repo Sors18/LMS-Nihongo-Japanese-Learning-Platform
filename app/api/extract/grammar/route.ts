@@ -1,5 +1,7 @@
 import { extractGrammarCore } from "@/app/actions/extractGrammar";
 import { createExtractionStream } from "@/lib/extractStream";
+import { getCurrentUser } from "@/lib/auth";
+import { checkRateLimit, rateKey, rateLimitedResponse, sweepRateBuckets, RATE_PRESETS } from "@/lib/rateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -19,12 +21,21 @@ function labelOf(stage: string, done: number, total: number): string {
 }
 
 export async function POST(req: Request): Promise<Response> {
+  // Trích xuất tốn quota Gemini theo batch cả video → bắt buộc đăng nhập.
+  const me = await getCurrentUser().catch(() => null);
+  if (!me) return Response.json({ error: "Vui lòng đăng nhập để trích xuất ngữ pháp" }, { status: 401 });
+  const rl = checkRateLimit(rateKey(req, "extract", me.id), RATE_PRESETS.extract.limit, RATE_PRESETS.extract.windowMs);
+  sweepRateBuckets();
+  if (!rl.allowed) return rateLimitedResponse(rl.resetMs);
   let videoId = 0;
   try {
     const body = (await req.json()) as { videoId?: number };
     videoId = Number(body.videoId) || 0;
   } catch {
     // invalid body → core trả []
+  }
+  if (!Number.isInteger(videoId) || videoId <= 0) {
+    return Response.json({ error: "videoId không hợp lệ" }, { status: 400 });
   }
   return createExtractionStream((report) => extractGrammarCore(videoId, report), percentOf, labelOf);
 }

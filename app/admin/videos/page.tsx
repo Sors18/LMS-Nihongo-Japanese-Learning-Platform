@@ -42,20 +42,14 @@ export default async function AdminVideosPage({
   try {
     const where: Prisma.VideoWhereInput = {};
     if (q) {
-      // Tách từ + contains mode insensitive (MySQL collation đã insensitive; dùng contains cho từng từ với AND)
-      const terms = q.split(/\s+/).filter(Boolean);
+      // MySQL: bỏ `mode` (chỉ Postgres) — collation utf8mb4_*_ci đã insensitive
+      const terms = q.split(/\s+/).filter(Boolean).slice(0, 5);
       if (terms.length === 1) {
         const t = terms[0]!;
-        where.OR = [
-          { title: { contains: t, mode: "insensitive" } as unknown as Prisma.StringFilter },
-          { youtube_id: { contains: t, mode: "insensitive" } as unknown as Prisma.StringFilter },
-        ];
+        where.OR = [{ title: { contains: t } }, { youtube_id: { contains: t } }];
       } else if (terms.length > 1) {
         where.AND = terms.map((t) => ({
-          OR: [
-            { title: { contains: t, mode: "insensitive" } as unknown as Prisma.StringFilter },
-            { youtube_id: { contains: t, mode: "insensitive" } as unknown as Prisma.StringFilter },
-          ],
+          OR: [{ title: { contains: t } }, { youtube_id: { contains: t } }],
         }));
       }
     }

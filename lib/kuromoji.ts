@@ -20,6 +20,9 @@ let tokenizerPromise: Promise<Tokenizer<IpadicFeatures>> | null = null;
 let tokenizerInstance: Tokenizer<IpadicFeatures> | null = null;
 
 function getDictPath(): string {
+  // Cho phép override qua env để deploy nhẹ (VD gắn volume / dùng CDN dict)
+  const override = (process.env.KUROMOJI_DIC_PATH ?? "").trim();
+  if (override) return override;
   // Ưu tiên absolute path từ process.cwd(), fallback về spec relative path
   const absolute = path.join(process.cwd(), "node_modules", "kuromoji", "dict");
   try {
@@ -30,6 +33,16 @@ function getDictPath(): string {
   // Spec yêu cầu builder({dicPath: "node_modules/kuromoji/dict"})
   return "node_modules/kuromoji/dict";
 }
+
+/** Warmup không chặn request — gọi 1 lần lúc server boot để tránh cold-start ở request đầu. */
+export function warmupTokenizer(): void {
+  // Fire-and-forget: lỗi đã được log trong tokenizeJapanese fallback
+  void buildTokenizer().catch(() => {});
+}
+
+// Timeout build dict — quá 15s coi như fail để request fallback char-split ngay
+// thay vì treo server (quan trọng khi deploy RAM thấp / Vercel).
+const BUILD_TIMEOUT_MS = Number(process.env.KUROMOJI_BUILD_TIMEOUT_MS ?? 15000) || 15000;
 
 function buildTokenizer(): Promise<Tokenizer<IpadicFeatures>> {
   if (tokenizerInstance) return Promise.resolve(tokenizerInstance);
@@ -54,7 +67,19 @@ function buildTokenizer(): Promise<Tokenizer<IpadicFeatures>> {
         return;
       }
 
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          reject(new Error(`kuromoji build timeout sau ${BUILD_TIMEOUT_MS}ms (dict: ${dicPath})`));
+        }
+      }, BUILD_TIMEOUT_MS);
+      // Không giữ process sống chỉ vì timer warmup
+      if (typeof timer.unref === "function") timer.unref();
       kuromoji.builder({ dicPath }).build((err, tokenizer) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         if (err) {
           reject(err);
           return;
