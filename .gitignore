@@ -40,3 +40,6 @@ WORKLOG.md
 *.log
 .vscode/
 .idea/
+
+# docs (local only)
+docs/
