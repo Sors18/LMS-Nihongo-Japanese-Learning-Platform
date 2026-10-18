@@ -7,6 +7,35 @@ import { parseSubtitleInput } from "@/lib/subtitleParser";
 import { expandVocabularyForRows } from "@/app/actions/extractVocab";
 import { syncGrammarForSubtitles } from "@/app/actions/extractGrammar";
 import type { StageProgressFn } from "@/lib/gemini";
+
+export async function translateSubtitlesAction(videoId: number): Promise<{ ok: true; translations: string[] } | { ok: false; error: string }> {
+  try {
+    await requireAdmin();
+  } catch {
+    return { ok: false, error: "Forbidden" };
+  }
+  const key = (process.env.GEMINI_API_KEY ?? "").trim();
+  if (!key) return { ok: false, error: "Thiếu GEMINI_API_KEY" };
+  const subs = await prisma.subtitle.findMany({ where: { video_id: videoId }, orderBy: { start_time_ms: "asc" }, select: { raw_text: true } });
+  if (subs.length === 0) return { ok: false, error: "Chưa có phụ đề" };
+  const lines = subs.map((s) => s.raw_text);
+  const prompt = `Dịch các câu tiếng Nhật sau sang tiếng Việt tự nhiên, giữ nguyên thứ tự. CHỈ dùng tiếng Việt (không chêm tiếng Thái, Anh, Nhật hay ký tự lạ). Trả về JSON array các chuỗi tiếng Việt thuần, không markdown.\n${JSON.stringify(lines)}`;
+  const model = (process.env.GEMINI_MODEL ?? "gemini-3.5-flash-lite").trim() || "gemini-3.5-flash-lite";
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", temperature: 0.2 } }),
+  });
+  if (!res.ok) return { ok: false, error: `Gemini ${res.status}` };
+  const json = await res.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+  let text = "";
+  for (const p of json.candidates?.[0]?.content?.parts ?? []) if (p.text) text += p.text;
+  let arr: unknown = null;
+  try { arr = JSON.parse(text); } catch { const m = text.match(/\[[\s\S]*\]/); if (m) try { arr = JSON.parse(m[0]); } catch {} }
+  if (!Array.isArray(arr)) return { ok: false, error: "Parse lỗi" };
+  const translations = arr.map((x) => String(x ?? "").trim());
+  return { ok: true, translations };
+}
 export type InsertSubtitleInput = {
   videoId: number;
   subtitleText: string;

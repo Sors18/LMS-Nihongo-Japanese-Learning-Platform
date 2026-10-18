@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { listSubtitlesAction, updateSubtitlesAction } from "@/app/actions/insertSubtitle";
+import { listSubtitlesAction, updateSubtitlesAction, translateSubtitlesAction } from "@/app/actions/insertSubtitle";
 import { formatMs, parseMsInput } from "@/lib/subtitleTime";
 import { parseSubtitleInput } from "@/lib/subtitleParser";
 
@@ -18,6 +18,7 @@ export default function SubtitleInsertForm({ videos, preselectId }: { videos: Vi
   const initial = preselectId && videos.some((v) => v.id === preselectId) ? String(preselectId) : videos[0] ? String(videos[0].id) : "";
   const [videoId, setVideoId] = useState<string>(initial);
   const [rows, setRows] = useState<Row[]>([]);
+  const [undoStack, setUndoStack] = useState<Row[][]>([]);
   const [loadedVideoId, setLoadedVideoId] = useState<number | null>(null);
   const [dirty, setDirty] = useState(false);
   const [rowErrors, setRowErrors] = useState<Record<number, string>>({});
@@ -70,7 +71,9 @@ export default function SubtitleInsertForm({ videos, preselectId }: { videos: Vi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoId]);
 
+  const pushUndo = () => setUndoStack((s) => [...s, rows.map((r) => ({ ...r }))]);
   const patchRow = (key: number, field: keyof Row, value: string) => {
+    pushUndo();
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
     setDirty(true);
     setResult(null);
@@ -83,12 +86,14 @@ export default function SubtitleInsertForm({ videos, preselectId }: { videos: Vi
   };
 
   const deleteRow = (key: number) => {
+    pushUndo();
     setRows((prev) => prev.filter((r) => r.key !== key));
     setDirty(true);
     setResult(null);
   };
 
   const addRow = () => {
+    pushUndo();
     setRows((prev) => {
       const last = prev[prev.length - 1];
       const lastEnd = last ? parseMsInput(last.end) ?? 0 : 0;
@@ -162,6 +167,61 @@ export default function SubtitleInsertForm({ videos, preselectId }: { videos: Vi
     });
   };
 
+  const handleExportSrt = () => {
+    const ms = (s: string) => parseMsInput(s) ?? 0;
+    const pad = (n: number, w: number) => String(n).padStart(w, "0");
+    const fmt = (m: number) => {
+      const h = Math.floor(m / 3600000);
+      const mm = Math.floor((m % 3600000) / 60000);
+      const ss = Math.floor((m % 60000) / 1000);
+      const msr = m % 1000;
+      return `${pad(h, 2)}:${pad(mm, 2)}:${pad(ss, 2)},${pad(msr, 3)}`;
+    };
+    const content = rows
+      .map((r, i) => {
+        const text = r.vi.trim() ? `${r.text.trim()}\n${r.vi.trim()}` : r.text.trim();
+        return `${i + 1}\n${fmt(ms(r.start))} --> ${fmt(ms(r.end))}\n${text}`;
+      })
+      .join("\n\n");
+    const blob = new Blob([content], { type: "text/srt;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${selectedVideo?.title?.replace(/[\\/:*?"<>|]/g, "_") ?? "subtitles"}.srt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleTranslate = () => {
+    const vid = Number(videoId);
+    if (!vid) return;
+    startTransition(async () => {
+      const res = await translateSubtitlesAction(vid);
+      if (!res.ok) { setError(res.error); return; }
+      pushUndo();
+      setRows((prev) => prev.map((r, i) => ({ ...r, vi: res.translations[i] ?? r.vi })));
+      setDirty(true);
+    });
+  };
+
+  const handleClearVi = () => {
+    pushUndo();
+    setRows((prev) => prev.map((r) => ({ ...r, vi: "" })));
+    setDirty(true);
+  };
+
+  const handleUndo = () => {
+    setUndoStack((s) => {
+      if (s.length === 0) return s;
+      const last = s[s.length - 1];
+      setRows(last);
+      setDirty(true);
+      return s.slice(0, -1);
+    });
+  };
+
   const handlePasteSave = () => {
     setError(null);
     setResult(null);
@@ -229,6 +289,21 @@ export default function SubtitleInsertForm({ videos, preselectId }: { videos: Vi
               <div className="mt-2 flex h-32 items-center justify-center rounded-lg bg-black text-xs text-slate-500">Chưa chọn video</div>
             )}
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={handleExportSrt} disabled={!rows.length} className="rounded-lg border border-sakura-200 bg-white px-4 py-1.5 text-xs font-semibold text-sakura-700 hover:bg-sakura-50 disabled:opacity-50">
+            ⬇ Xuất .srt
+          </button>
+          <button onClick={handleTranslate} disabled={isPending || !rows.length} className="rounded-lg bg-sky-600 px-4 py-1.5 text-xs font-semibold text-slate-800 hover:bg-sky-500 disabled:opacity-50">
+            {isPending ? "Đang dịch..." : "Dịch tự động"}
+          </button>
+          <button onClick={handleClearVi} disabled={!rows.length} className="rounded-lg border border-red-300 bg-white px-4 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50">
+            Xóa hết VI
+          </button>
+          <button onClick={handleUndo} disabled={undoStack.length === 0} className="rounded-lg border border-sakura-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-sakura-50 disabled:opacity-50">
+            ↶ Hoàn tác
+          </button>
         </div>
 
         <div>
@@ -347,9 +422,9 @@ export default function SubtitleInsertForm({ videos, preselectId }: { videos: Vi
 
         {tab === "edit" && (
         <div className="flex flex-wrap gap-3">
-          <button onClick={handleSave} disabled={isPending || !videoId || !dirty} className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50">
-            {isPending ? "Đang lưu..." : "Lưu phụ đề"}
-          </button>
+            <button onClick={handleSave} disabled={isPending || !videoId || !dirty} className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50">
+              {isPending ? "Đang lưu..." : "Lưu phụ đề"}
+            </button>
           {result && (
             <a href={`/video/${result.videoId}`} className="rounded-lg bg-sky-600 px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-sky-500">
               Mở video #{result.videoId} để test →

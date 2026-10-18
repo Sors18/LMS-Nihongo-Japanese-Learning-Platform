@@ -2,6 +2,15 @@ import { hasJapanese, pairBilingualLines, splitBilingualCueText } from "./biling
 
 export type ParsedSubtitle = { start_time_ms: number; end_time_ms: number; raw_text: string; translation?: string | null };
 
+function cleanScriptText(s: string): string {
+  // Bỏ romaji/latin dính vào câu Nhật; giữ nguyên tiếng Việt có dấu
+  if (/[ぁ-んァ-ン一-龯]/.test(s)) {
+    // Chỉ xóa chuỗi romaji/latin dính ngay sau chữ Nhật, giữ tiếng Việt có dấu
+    return s.replace(/([ぁ-んァ-ン一-龯])\s*[a-zA-Z]{2,}/g, "$1").replace(/\s{2,}/g, " ").trim();
+  }
+  return s.trim();
+}
+
 function parseTimeToMs(t: string): number | null {
   const normalized = t.trim().replace(",", ".");
   // remove trailing spaces/punctuation
@@ -118,7 +127,7 @@ export function parseSubtitleInput(raw: string): ParsedSubtitle[] {
       if (jp) cues.push({ start_time_ms: start, end_time_ms: end, raw_text: jp, translation: vi });
       // don't increment i here, loop will handle
     }
-    if (cues.length > 0) return cues.sort((a, b) => a.start_time_ms - b.start_time_ms);
+    if (cues.length > 0) return cues.map((c) => ({ ...c, raw_text: cleanScriptText(c.raw_text) })).sort((a, b) => a.start_time_ms - b.start_time_ms);
   }
 
   // --- 2) Timestamped lines like "00:01 こんにちは" (every line starts with timestamp) ---
@@ -206,9 +215,9 @@ export function parseSubtitleInput(raw: string): ParsedSubtitle[] {
           }
         }
       }
-      if (alt.length > 0) return alt;
+      if (alt.length > 0) return alt.map((c) => ({ ...c, raw_text: cleanScriptText(c.raw_text) }));
     }
-    if (out.length > 0) return out;
+    if (out.length > 0) return out.map((c) => ({ ...c, raw_text: cleanScriptText(c.raw_text) }));
   }
 
   // --- 3) Plain: câu Nhật + bản dịch Việt cách dòng → ghép cặp song ngữ ---
@@ -221,7 +230,7 @@ export function parseSubtitleInput(raw: string): ParsedSubtitle[] {
   return pairs.map((p, idx) => ({
     start_time_ms: idx * perLineMs,
     end_time_ms: (idx + 1) * perLineMs - 200,
-    raw_text: p.jp,
+    raw_text: cleanScriptText(p.jp),
     translation: p.vi,
   }));
 }

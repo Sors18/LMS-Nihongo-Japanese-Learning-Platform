@@ -69,6 +69,32 @@ export default function VideoDetailClient({
 
   const handleCloseShadowing = useCallback(() => setShadowing(null), []);
 
+  const msToSrtTime = (ms: number) => {
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    const milli = ms % 1000;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")},${String(milli).padStart(3, "0")}`;
+  };
+
+  const handleExportSrt = useCallback(() => {
+    const content = subtitles
+      .map((s, i) => {
+        const text = s.translation ? `${s.raw_text}\n${s.translation}` : s.raw_text;
+        return `${i + 1}\n${msToSrtTime(s.start_time_ms)} --> ${msToSrtTime(s.end_time_ms)}\n${text}`;
+      })
+      .join("\n\n");
+    const blob = new Blob([content], { type: "text/srt;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${title.replace(/[\\/:*?"<>|]/g, "_")}.srt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [subtitles, title]);
+
   const handleOpenTest = useCallback(() => {
     if (!isLoggedIn) {
       window.location.href = "/login?next=/video/" + videoId;
@@ -171,6 +197,13 @@ export default function VideoDetailClient({
               currentTimeMs: <span className="font-mono text-sakura-600">{currentTimeMs}</span> · durationMs:{" "}
               <span className="font-mono">{durationMs}</span>
             </p>
+            <button
+              onClick={handleExportSrt}
+              disabled={!subtitles.length}
+              className="mt-2 w-full rounded-full border border-sakura-200 bg-white px-4 py-2 text-xs font-bold text-sakura-700 shadow-sm hover:bg-sakura-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              ⬇ Xuất phụ đề (.srt)
+            </button>
           </details>
         )}
       </div>
