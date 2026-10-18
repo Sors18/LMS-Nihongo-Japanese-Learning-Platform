@@ -477,22 +477,7 @@ export default function VideoPlayer({
             không có tham số tắt; gradient mờ không che nổi chữ trắng trên nền sáng nên phải
             đặc 44px vừa đủ che dòng chữ + loang mềm 28px bên dưới cho đỡ thô).
             Chỉ hiện cùng lúc với controls. */}
-        <div
-          data-testid="video-title-scrim"
-          aria-hidden="true"
-          className={`pointer-events-none absolute left-0 right-0 top-0 z-10 transition-opacity duration-300 ${showControls ? "opacity-100" : "opacity-0"}`}
-        >
-          <div className="h-[44px] bg-black" />
-          <div className="h-[28px] bg-gradient-to-b from-black to-transparent" />
-        </div>
-        {/* Che logo/watermark + dải "video khác" đáy YouTube — chỉ hiện cùng thanh controls
-            khi di chuột/tương tác; lúc không hover thì ẩn hẳn.
-            Cao 54px để che kín logo (42px cũ vẫn hở một phần). */}
-        <div
-          data-testid="video-logo-mask"
-          aria-hidden="true"
-          className={`pointer-events-none absolute bottom-0 left-0 right-0 z-10 h-[54px] bg-black transition-opacity duration-300 ${showControls ? "opacity-100" : "opacity-0"}`}
-        />
+        {/* Đã bỏ thanh đen che logo YouTube */}
         {/* Overlay phụ đề kiểu YouTube: nghỉ (ẩn controls) → đè LÊN TRÊN dải đen che logo;
             (z-20 cao hơn logo-mask z-10 nên dòng Việt không bị che);
             hover (hiện controls) → nhảy lên trên thanh điều khiển */}

@@ -126,6 +126,11 @@ export default function VideoDetailClient({
       </div>
 
       <div className="space-y-4">
+        {isAdmin && (
+          <a href={`/admin/subtitle?videoId=${videoId}`} className="block w-full rounded-full border border-sakura-200 bg-white px-4 py-2.5 text-center text-sm font-bold text-sakura-700 shadow-sm hover:bg-sakura-50">
+            ⚙ Quản lý video (sửa phụ đề)
+          </a>
+        )}
         {/* Phụ đề lên trên cùng cột phải */}
         <SubtitlePanel subtitles={subtitles} currentTimeMs={currentTimeMs} onSeek={handleSeek} onShadowing={handleShadowing} isAdmin={isAdmin} />
         {activeSubtitle && !shadowing && (
