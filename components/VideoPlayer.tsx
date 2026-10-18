@@ -439,7 +439,7 @@ export default function VideoPlayer({
         tabIndex={0}
         role="region"
           aria-label="Khung video — bấm để focus, phím ←/→ tua 5 giây, F toàn màn hình kiểu YouTube"
-          title="Bấm vào video để focus • ←/→ tua 5s • F toàn màn hình"
+          title="Bấm vào video để focus"
         onKeyDown={handleSurfaceKeyDown}
         className={`relative aspect-video w-full overflow-hidden rounded-lg bg-black group focus:outline-none focus-visible:ring-2 focus-visible:ring-sakura-400 ${showControls ? "" : "cursor-none"}`}
       >

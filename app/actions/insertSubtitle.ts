@@ -19,7 +19,7 @@ export async function translateSubtitlesAction(videoId: number): Promise<{ ok: t
   const subs = await prisma.subtitle.findMany({ where: { video_id: videoId }, orderBy: { start_time_ms: "asc" }, select: { raw_text: true } });
   if (subs.length === 0) return { ok: false, error: "Chưa có phụ đề" };
   const lines = subs.map((s) => s.raw_text);
-  const prompt = `Dịch các câu tiếng Nhật sau sang tiếng Việt tự nhiên, giữ nguyên thứ tự. CHỈ dùng tiếng Việt (không chêm tiếng Thái, Anh, Nhật hay ký tự lạ). Trả về JSON array các chuỗi tiếng Việt thuần, không markdown.\n${JSON.stringify(lines)}`;
+  const prompt = `Dịch các câu tiếng Nhật sau sang tiếng Việt tự nhiên, đầy đủ dấu tiếng Việt, giữ nguyên thứ tự. CHỈ dùng tiếng Việt (không chêm tiếng Thái, Anh, Nhật hay ký tự lạ). Trả về JSON array các chuỗi tiếng Việt thuần có dấu, không markdown.\n${JSON.stringify(lines)}`;
   const model = (process.env.GEMINI_MODEL ?? "gemini-3.5-flash-lite").trim() || "gemini-3.5-flash-lite";
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`, {
     method: "POST",
