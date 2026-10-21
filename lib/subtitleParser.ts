@@ -2,6 +2,25 @@ import { hasJapanese, pairBilingualLines, splitBilingualCueText } from "./biling
 
 export type ParsedSubtitle = { start_time_ms: number; end_time_ms: number; raw_text: string; translation?: string | null };
 
+function stripFurigana(s: string): string {
+  // Xóa furigana kiểu 漢(かん)字(じ) → 漢字
+  return s.replace(/([^\s(])\([^)]*\)/g, "$1");
+}
+
+function dedupCues(cues: ParsedSubtitle[]): ParsedSubtitle[] {
+  const out: ParsedSubtitle[] = [];
+  for (const c of cues) {
+    const text = stripFurigana(c.raw_text).trim();
+    const last = out[out.length - 1];
+    if (last && last.raw_text.trim() === text) {
+      last.end_time_ms = Math.max(last.end_time_ms, c.end_time_ms);
+      continue;
+    }
+    out.push({ ...c, raw_text: text });
+  }
+  return out;
+}
+
 function cleanScriptText(s: string): string {
   // Bỏ romaji/latin dính vào câu Nhật; giữ nguyên tiếng Việt có dấu
   if (/[ぁ-んァ-ン一-龯]/.test(s)) {
@@ -47,7 +66,7 @@ export function parseSubtitleInput(raw: string): ParsedSubtitle[] {
   const trimmed = raw.trim();
   if (!trimmed) return [];
 
-  const normalized = trimmed.replace(/\r\n/g, "\n");
+  const normalized = trimmed.replace(/\r\n/g, "\n").replace(/\b100:/g, "00:");
 
   // --- 1) Try robust line-scan for SRT/VTT containing --> ---
   if (normalized.includes("-->")) {
@@ -127,7 +146,7 @@ export function parseSubtitleInput(raw: string): ParsedSubtitle[] {
       if (jp) cues.push({ start_time_ms: start, end_time_ms: end, raw_text: jp, translation: vi });
       // don't increment i here, loop will handle
     }
-    if (cues.length > 0) return cues.map((c) => ({ ...c, raw_text: cleanScriptText(c.raw_text) })).sort((a, b) => a.start_time_ms - b.start_time_ms);
+    if (cues.length > 0) return dedupCues(cues.sort((a, b) => a.start_time_ms - b.start_time_ms));
   }
 
   // --- 2) Timestamped lines like "00:01 こんにちは" (every line starts with timestamp) ---
@@ -215,9 +234,9 @@ export function parseSubtitleInput(raw: string): ParsedSubtitle[] {
           }
         }
       }
-      if (alt.length > 0) return alt.map((c) => ({ ...c, raw_text: cleanScriptText(c.raw_text) }));
+      if (alt.length > 0) return dedupCues(alt);
     }
-    if (out.length > 0) return out.map((c) => ({ ...c, raw_text: cleanScriptText(c.raw_text) }));
+    if (out.length > 0) return dedupCues(out);
   }
 
   // --- 3) Plain: câu Nhật + bản dịch Việt cách dòng → ghép cặp song ngữ ---
@@ -227,10 +246,10 @@ export function parseSubtitleInput(raw: string): ParsedSubtitle[] {
     .filter(Boolean);
   const pairs = pairBilingualLines(cleaned);
   const perLineMs = 3000;
-  return pairs.map((p, idx) => ({
+  return dedupCues(pairs.map((p, idx) => ({
     start_time_ms: idx * perLineMs,
     end_time_ms: (idx + 1) * perLineMs - 200,
-    raw_text: cleanScriptText(p.jp),
+    raw_text: stripFurigana(p.jp),
     translation: p.vi,
-  }));
+  })));
 }
