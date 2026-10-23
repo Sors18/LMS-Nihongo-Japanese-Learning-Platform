@@ -83,9 +83,9 @@ export default async function HistoryPage({
                           <span
                             className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
                               isPerfect
-                                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-600/30"
+                                ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
                                 : isGood
-                                  ? "bg-amber-500/15 text-amber-300 border border-amber-600/30"
+                                  ? "bg-amber-100 text-amber-800 border border-amber-200"
                                   : "bg-sakura-100 text-sakura-700 border border-sakura-200"
                             }`}
                           >
