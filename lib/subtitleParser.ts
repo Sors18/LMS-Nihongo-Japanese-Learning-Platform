@@ -166,7 +166,7 @@ export function parseSubtitleInput(raw: string): ParsedSubtitle[] {
       if (!m) {
         // Dòng trần không timestamp: bản dịch Việt → gắn vào cue ngay trước
         const prev = out[out.length - 1];
-        if (prev && !prev.translation && !hasJapanese(l)) prev.translation = l.trim().slice(0, 2000);
+        if (prev && !prev.translation && !hasJapanese(l) && !l.includes("-->") && !/\d{1,2}:\d{2}/.test(l)) prev.translation = l.trim().slice(0, 2000);
         continue;
       }
       const start = parseTimeToMs(m[1]);
