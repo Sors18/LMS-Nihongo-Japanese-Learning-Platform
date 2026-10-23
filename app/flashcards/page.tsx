@@ -100,7 +100,7 @@ export default async function FlashcardsPage({
             Trang {safePage}/{totalPages} • {serialized.length} thẻ • Hiển thị {paginated.length} thẻ
           </p>
         </div>
-        <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300 border border-slate-700">
+        <span className="rounded-full bg-sakura-50 px-3 py-1 text-xs text-sakura-700 border border-sakura-200">
           {user.name} • {serialized.length} thẻ
         </span>
       </div>

@@ -54,28 +54,28 @@ export default async function HistoryPage({
         </div>
       ) : (
         <>
-          <div className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
+          <div className="overflow-hidden rounded-xl border border-sakura-200 bg-white">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="bg-sakura-50 text-xs uppercase tracking-wide text-slate-400">
+                <thead className="bg-sakura-50 text-xs uppercase tracking-wide text-sakura-700">
                   <tr>
                     <th className="px-4 py-3 font-medium">Video</th>
                     <th className="px-4 py-3 font-medium">Điểm</th>
                     <th className="px-4 py-3 font-medium">Ngày làm</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-700">
+                <tbody className="divide-y divide-sakura-200/50">
                   {results.map((r) => {
                     const pct = r.total_questions > 0 ? Math.round((r.score / r.total_questions) * 100) : 0;
                     const isPerfect = r.score === r.total_questions && r.total_questions > 0;
                     const isGood = pct >= 50 && !isPerfect;
                     return (
-                      <tr key={r.id} className="hover:bg-slate-700/40">
+                      <tr key={r.id} className="hover:bg-sakura-50">
                         <td className="px-4 py-3">
                           <p className="font-medium text-slate-800">
                             {r.video?.title ?? `Video #${r.video_id}`}
                           </p>
-                          <p className="text-xs text-slate-400">
+                          <p className="text-xs text-slate-500">
                             {r.video?.level ? `Cấp ${r.video.level}` : ""} {r.video?.youtube_id ? `• ${r.video.youtube_id}` : ""}
                           </p>
                         </td>
@@ -86,14 +86,14 @@ export default async function HistoryPage({
                                 ? "bg-emerald-500/20 text-emerald-300 border border-emerald-600/30"
                                 : isGood
                                   ? "bg-amber-500/15 text-amber-300 border border-amber-600/30"
-                                  : "bg-slate-700 text-slate-200"
+                                  : "bg-sakura-100 text-sakura-700 border border-sakura-200"
                             }`}
                           >
                             {r.score} / {r.total_questions}
                             <span className="text-[11px] opacity-70">({pct}%)</span>
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-slate-300">
+                        <td className="px-4 py-3 text-slate-500">
                           <time dateTime={r.completed_at.toISOString()} title={r.completed_at.toISOString()}>
                             {new Intl.DateTimeFormat("vi-VN", {
                               dateStyle: "medium",
