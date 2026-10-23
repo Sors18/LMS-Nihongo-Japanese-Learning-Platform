@@ -54,6 +54,7 @@ export default function VocabExtractor({ videoId, subtitles: _subtitles, isAdmin
   const [bulkSaving, setBulkSaving] = useState(false);
   const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
   const [tab, setTab] = useState<"all" | "vocab" | "names">("all");
+  const [collapsed, setCollapsed] = useState(false);
   const [page, setPage] = useState(1);
   const { progress, run: runJob, cancel: cancelJob } = useExtractionJob();
   const extracting = isPending || progress !== null;
@@ -189,6 +190,12 @@ export default function VocabExtractor({ videoId, subtitles: _subtitles, isAdmin
           <p className="mt-0.5 text-xs text-slate-500">Trích xuất bằng kuromoji từ phụ đề · Video #{videoId}</p>
         </div>
         <button
+          onClick={() => setCollapsed((c) => !c)}
+          className="rounded-md border border-sakura-200 bg-white px-3 py-2 text-sm font-semibold text-sakura-700 hover:bg-sakura-50"
+        >
+          {collapsed ? "Mở rộng" : "Thu gọn"}
+        </button>
+        <button
           onClick={handleExtract}
           disabled={extracting}
           className="inline-flex items-center gap-2 rounded-md bg-sakura-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sakura-600 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -198,6 +205,8 @@ export default function VocabExtractor({ videoId, subtitles: _subtitles, isAdmin
         </button>
       </div>
 
+      {!collapsed && (
+        <>
       {error && <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
 
       {vocabList.length > 0 && (
@@ -350,6 +359,8 @@ export default function VocabExtractor({ videoId, subtitles: _subtitles, isAdmin
         <p className="mt-3 text-xs text-slate-500">Nhấn &ldquo;Trích xuất từ vựng&rdquo; để tách từ từ phụ đề bằng kuromoji.</p>
       )}
 
+        </>
+      )}
       {toast && (
         <div className="fixed bottom-4 right-4 z-[80] rounded-md border border-sakura-200 bg-white px-4 py-2 text-sm text-slate-800 shadow-lg">
           {toast}

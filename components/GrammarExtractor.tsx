@@ -140,6 +140,7 @@ export default function GrammarExtractor({ videoId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [collapsed, setCollapsed] = useState(false);
   const { progress, run: runJob, cancel: cancelJob } = useExtractionJob();
   const scanning = isPending || progress !== null;
 
@@ -183,6 +184,12 @@ export default function GrammarExtractor({ videoId }: Props) {
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setCollapsed((c) => !c)}
+            className="rounded-full border border-sakura-200 bg-white px-3 py-2 text-sm font-semibold text-sakura-700 hover:bg-sakura-50"
+          >
+            {collapsed ? "Mở rộng" : "Thu gọn"}
+          </button>
+          <button
             onClick={handleScan}
             disabled={scanning}
             className="inline-flex items-center gap-2 rounded-full bg-sakura-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sakura-600 disabled:cursor-not-allowed disabled:opacity-50"
@@ -193,6 +200,8 @@ export default function GrammarExtractor({ videoId }: Props) {
         </div>
       </div>
 
+      {!collapsed && (
+        <>
       {error && <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
       {matches.length > 0 ? (
@@ -202,6 +211,8 @@ export default function GrammarExtractor({ videoId }: Props) {
         !error && <p className="mt-3 text-xs text-slate-500">Nhấn &ldquo;Quét ngữ pháp&rdquo; để phát hiện mẫu câu từ phụ đề.</p>
       )}
 
+        </>
+      )}
       {toast && (
         <div className="fixed bottom-4 right-4 z-[80] rounded-xl border border-sakura-200 bg-white px-4 py-2 text-sm text-slate-800 shadow-lg">
           {toast}
