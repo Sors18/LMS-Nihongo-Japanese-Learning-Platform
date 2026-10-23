@@ -163,10 +163,19 @@ export function parseSubtitleInput(raw: string): ParsedSubtitle[] {
     for (let idx = 0; idx < lines2.length; idx++) {
       const l = lines2[idx];
       const m = l.match(/^(\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d+)?)\s*[-–]?\s*(.*)$/);
-      if (!m) {
-        // Dòng trần không timestamp: bản dịch Việt → gắn vào cue ngay trước
-        const prev = out[out.length - 1];
-        if (prev && !prev.translation && !hasJapanese(l) && !l.includes("-->") && !/\d{1,2}:\d{2}/.test(l)) prev.translation = l.trim().slice(0, 2000);
+        if (!m) {
+        // Dòng trần không timestamp: bản dịch Việt → gắn vào cue ngay trước.
+        // Bỏ qua dòng chứa --> / timestamp lẻ / chỉ số dòng để không nhầm làm dịch Việt.
+        if (
+          prev &&
+          !prev.translation &&
+          !hasJapanese(l) &&
+          !l.includes("-->") &&
+          !/^\d{1,2}:\d{2}/.test(l) &&
+          !/^\d+\s*,/.test(l)
+        ) {
+          prev.translation = l.trim().slice(0, 2000);
+        }
         continue;
       }
       const start = parseTimeToMs(m[1]);
