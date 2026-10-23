@@ -184,12 +184,6 @@ export default function GrammarExtractor({ videoId }: Props) {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setCollapsed((c) => !c)}
-            className="rounded-full border border-sakura-200 bg-white px-3 py-2 text-sm font-semibold text-sakura-700 hover:bg-sakura-50"
-          >
-            {collapsed ? "Mở rộng" : "Thu gọn"}
-          </button>
-          <button
             onClick={handleScan}
             disabled={scanning}
             className="inline-flex items-center gap-2 rounded-full bg-sakura-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sakura-600 disabled:cursor-not-allowed disabled:opacity-50"
@@ -212,6 +206,14 @@ export default function GrammarExtractor({ videoId }: Props) {
       )}
 
         </>
+      )}
+      {matches.length > 0 && (
+        <button
+          onClick={() => setCollapsed((c) => !c)}
+          className="mt-3 text-xs text-slate-400 hover:text-sakura-600"
+        >
+          {collapsed ? "▸ Mở rộng" : "▾ Thu gọn"}
+        </button>
       )}
       {toast && (
         <div className="fixed bottom-4 right-4 z-[80] rounded-xl border border-sakura-200 bg-white px-4 py-2 text-sm text-slate-800 shadow-lg">
