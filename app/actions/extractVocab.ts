@@ -26,6 +26,11 @@ function getAllowedLevels(level: string | null | undefined): Set<string> | null 
 }
 // Simple in-memory cache for Jisho lookups (per server lifetime)
 const jishoCache = new Map<string, { meaning: string; level: string | null; isCommon: boolean } | null>();
+// Cache token hóa theo dòng phụ đề để trích xuất lại không tách từ trùng
+const tokenCache = new Map<string, KuromojiToken[]>();
+function cacheKey(subId: number, text: string): string {
+  return `${subId}:${text.length}:${text.slice(0, 40)}`;
+}
 // Nghĩa placeholder do bulk-insert cũ ghi khi Jisho fail — enrich sẽ thử Gemini lại
 const PLACEHOLDER_RE = /Tên riêng\/ ?katakana:|\(từ mới|\(từ trong|\(chưa có trong từ điển\)|— cần bổ sung/;
 
@@ -382,7 +387,10 @@ export async function extractVocabCore(videoId: number, onProgress?: StageProgre
       subtitles.slice(i, i + 25).map(async (sub) => {
         const text = (sub.raw_text ?? "").trim();
         if (!text) return { subtitleId: sub.id, tokens: [] as KuromojiToken[] };
-        const tokens = await getCachedTokens(text);
+        const key = cacheKey(sub.id, text);
+        const cached = tokenCache.get(key);
+        const tokens = cached ?? (await getCachedTokens(text));
+        if (!cached) tokenCache.set(key, tokens);
         return { subtitleId: sub.id, tokens };
       })
     );
@@ -545,7 +553,10 @@ export async function expandVocabularyForRows(
       subtitles.slice(i, i + 25).map(async (sub) => {
         const t = (sub.raw_text ?? "").trim().replace(/[\u200B\u200C\u200D\uFEFF\u00A0]/g, "");
         if (!t) return { subtitleId: sub.id, tokens: [] as KuromojiToken[] };
-        const toks = await getCachedTokens(t);
+        const key = cacheKey(sub.id, t);
+        const cached = tokenCache.get(key);
+        const toks = cached ?? (await getCachedTokens(t));
+        if (!cached) tokenCache.set(key, toks);
         return { subtitleId: sub.id, tokens: toks };
       })
     );
